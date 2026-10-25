@@ -1,27 +1,29 @@
 # RAG Chatbot Backend API
 
-A secure REST backend built with **FastAPI, PostgreSQL and JWT authentication**, designed to serve a RAG chatbot to multiple users.
+A secure REST backend built with **FastAPI, PostgreSQL and JWT authentication** that serves a local RAG chatbot to multiple users. Each user uploads their own PDFs and chats with them.
 
 ## Problem
-A RAG chatbot running as a local script can't serve multiple users, remember conversations or restrict access.
+A RAG chatbot running as a local script can't serve multiple users, keep their documents separate, remember conversations or restrict access.
 
 ## Solution
-A backend API that adds user accounts, token-based login and per-user chat history. The `/chat` endpoint calls a single function in `app/rag_service.py`, so the chatbot logic stays separate from the API layer.
+A backend API that adds user accounts, token-based login, per-user document indexes and per-user chat history around a local RAG pipeline.
 
-## Current status
-- Done: authentication, protected routes, PostgreSQL storage, per-user chat history
-- In progress: `/chat` currently returns a placeholder answer; the real RAG pipeline (Ollama, LangChain, ChromaDB) is being connected in `app/rag_service.py`
+## How it works
+1. A user signs up and logs in, and gets a JWT access token
+2. `POST /upload` splits a PDF into chunks and stores their embeddings in a per-user ChromaDB collection
+3. `POST /chat` retrieves the 3 most relevant chunks from that user's collection and sends them with the question to a local Llama 3.2 model through Ollama
+4. The question and answer are saved in PostgreSQL and listed by `GET /history`
 
 ## Features
 - Signup and login with bcrypt-hashed passwords
 - JWT access tokens with a 30-minute expiry
-- Protected routes: `/me`, `/chat`, `/history`
-- Each user can only read their own chat history
-- PostgreSQL storage through the SQLAlchemy ORM
-- Request validation with Pydantic and auto-generated docs at `/docs`
+- Protected routes: `/me`, `/upload`, `/chat`, `/history`
+- Per-user vector collections: one user can never retrieve another user's documents
+- Per-user chat history stored in PostgreSQL through SQLAlchemy
+- Fully local inference (Ollama), no external LLM API
 
 ## Tech stack
-FastAPI, Uvicorn, PostgreSQL, SQLAlchemy, Pydantic, python-jose (JWT), passlib/bcrypt
+FastAPI, Uvicorn, PostgreSQL, SQLAlchemy, Pydantic, python-jose (JWT), passlib/bcrypt, LangChain, ChromaDB, HuggingFace embeddings (all-MiniLM-L6-v2), Ollama (llama3.2:1b)
 
 ## API routes
 | Method | Route | Auth | Purpose |
@@ -29,18 +31,13 @@ FastAPI, Uvicorn, PostgreSQL, SQLAlchemy, Pydantic, python-jose (JWT), passlib/b
 | POST | /signup | No | Create an account |
 | POST | /login | No | Get an access token |
 | GET | /me | Yes | Current user info |
-| POST | /chat | Yes | Ask a question, save the answer |
+| POST | /upload | Yes | Upload a PDF and index it for your account |
+| POST | /chat | Yes | Ask a question about your PDFs |
 | GET | /history | Yes | List your past chats |
 
-## Example
-```
-POST /chat
-Authorization: Bearer <access_token>
-{"question": "hello"}
-
-200 OK
-{"question": "hello", "answer": "..."}
-```
+## Screenshots
+![API docs](docs/api-docs.png)
+![Chat answer](docs/chat-answer.png)
 
 ## Project structure
 ```
@@ -50,20 +47,24 @@ app/
   database.py     PostgreSQL connection
   models.py       database tables (User, ChatMessage)
   schemas.py      request/response shapes
-  rag_service.py  chatbot logic plugs in here
+  rag_service.py  PDF ingestion and RAG answering
 ```
 
 ## Security notes
-- Passwords are stored only as bcrypt hashes, never in plain text
+- Passwords are stored only as bcrypt hashes
 - Tokens are signed with a secret key and expire after 30 minutes
 - Secrets live in `.env`, which is excluded from git
-- Chat history queries are filtered by the logged-in user's id
+- Chat history and vector search are both filtered by the logged-in user
 
 ## Run locally
-1. Create a PostgreSQL database named `ragchatbot_db`
-2. Copy `.env.example` to `.env` and fill in your values
-3. Generate a secret key: `python -c "import secrets; print(secrets.token_hex(32))"`
-4. `python -m venv venv`, then `venv\Scripts\activate`
-5. `pip install -r requirements.txt`
-6. `uvicorn app.main:app --reload`
-7. Open http://127.0.0.1:8000/docss
+1. Install PostgreSQL and create a database named `ragchatbot_db`
+2. Install Ollama and run `ollama pull llama3.2:1b`
+3. Copy `.env.example` to `.env` and fill in your values
+4. Generate a secret key: `python -c "import secrets; print(secrets.token_hex(32))"`
+5. `python -m venv venv`, then `venv\Scripts\activate`
+6. `pip install -r requirements.txt`
+7. `uvicorn app.main:app --reload`
+8. Open http://127.0.0.1:8000/docs
+
+## Next improvements
+Source citations in answers, multi-file management per user, and deployment.

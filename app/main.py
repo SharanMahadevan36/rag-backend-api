@@ -1,6 +1,8 @@
+import os
+import tempfile
 from typing import List
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app import models, schemas, auth, rag_service
@@ -40,13 +42,36 @@ def me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
 
 
+@app.post("/upload")
+def upload_pdf(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(file.file.read())
+        tmp_path = tmp.name
+
+    try:
+        chunks = rag_service.ingest_pdf(tmp_path, current_user.id)
+    finally:
+        os.remove(tmp_path)
+
+    if chunks == 0:
+        raise HTTPException(status_code=400, detail="No readable text found in the PDF")
+
+    return {"filename": file.filename, "chunks_indexed": chunks}
+
+
 @app.post("/chat", response_model=schemas.ChatOut)
 def chat(
     request: schemas.ChatRequest,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    answer = rag_service.get_rag_answer(request.question)
+    answer = rag_service.get_rag_answer(request.question, current_user.id)
     message = models.ChatMessage(
         user_id=current_user.id,
         question=request.question,

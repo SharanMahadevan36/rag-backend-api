@@ -3,6 +3,15 @@ uvicorn
 sqlalchemy
 psycopg2-binary
 python-jose
-passlib[bcrypt]
+passlib
+bcrypt==4.0.1
 python-multipart
 python-dotenv
+langchain-core==1.5.5
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+langchain-huggingface==1.2.2
+langchain-chroma==1.1.0
+langchain-ollama==1.1.0
+pypdf==6.16.1
+sentence-transformers==5.7.0
